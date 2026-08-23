@@ -5,8 +5,11 @@
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![Tests](https://github.com/vivekkr-data/CreditWise-Loan-System/actions/workflows/tests.yml/badge.svg)](https://github.com/vivekkr-data/CreditWise-Loan-System/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Open_App-0F766E?logo=streamlit&logoColor=white)](https://creditwise-loan-system-vivek.streamlit.app/)
 
 CreditWise is an end-to-end machine-learning portfolio project that estimates the likelihood of a loan application being approved. It includes data validation, exploratory analysis, a leakage-safe scikit-learn pipeline, reproducible evaluation, automated tests, and a Streamlit interface.
+
+**Live application:** [creditwise-loan-system-vivek.streamlit.app](https://creditwise-loan-system-vivek.streamlit.app/)
 
 > This is a decision-support demonstration built from the dataset included in this repository. It is not a production lending system and must not be used to make real financial decisions without legal, fairness, calibration, and business-policy review.
 
@@ -235,6 +238,10 @@ python -m unittest discover -s tests -v
 GitHub Actions repeats the tests and verifies the training workflow on every push to `main` and on pull requests.
 
 ## Deployment
+
+The verified public application is live at:
+
+**[Open CreditWise](https://creditwise-loan-system-vivek.streamlit.app/)**
 
 ### Recommended: Streamlit Community Cloud
 
