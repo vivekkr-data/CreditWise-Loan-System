@@ -24,6 +24,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
+      - name: Check code quality
+        run: ruff check .
+
+      - name: Audit deployment dependencies
+        run: pip-audit -r requirements.txt
+
       - name: Run tests
         run: python -m unittest discover -s tests -v
 
@@ -32,3 +38,15 @@ jobs:
 
       - name: Verify model benchmark
         run: python benchmark_models.py
+
+      - name: Verify fairness audit
+        run: python fairness_audit.py
+
+      - name: Execute analysis notebook
+        run: >-
+          jupyter nbconvert --to notebook --execute credit_wise.ipynb
+          --output credit_wise_executed.ipynb --output-dir /tmp
+          --ExecutePreprocessor.timeout=120
+
+      - name: Confirm committed reports are reproducible
+        run: git diff --exit-code -- reports

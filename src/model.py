@@ -21,19 +21,18 @@ from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_PATH = PROJECT_ROOT / "loan_approval_data.csv"
 TARGET = "Loan_Approved"
 
-# Applicant_ID is only an identifier. Gender and marital status are kept in the
-# source dataset for analysis, but deliberately excluded from model decisions.
-EXCLUDED_FEATURES = ["Applicant_ID", "Gender", "Marital_Status"]
+# These columns remain available for data-quality and fairness analysis but are
+# deliberately excluded from model decisions. Age was also removed because it
+# is a sensitive lending attribute and did not improve holdout performance.
+EXCLUDED_FEATURES = ["Applicant_ID", "Gender", "Marital_Status", "Age"]
 
 NUMERIC_FEATURES = [
     "Applicant_Income",
     "Coapplicant_Income",
-    "Age",
     "Dependents",
     "Credit_Score",
     "Existing_Loans",
@@ -53,6 +52,22 @@ CATEGORICAL_FEATURES = [
 ]
 
 MODEL_FEATURES = NUMERIC_FEATURES + CATEGORICAL_FEATURES
+
+
+def split_development_holdout(
+    features: pd.DataFrame,
+    target: pd.Series,
+    test_size: float = 0.20,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """Create the single holdout split shared by evaluation and benchmarking."""
+    return train_test_split(
+        features,
+        target,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=target,
+    )
 
 
 def load_data(path: str | Path = DEFAULT_DATA_PATH) -> tuple[pd.DataFrame, pd.Series]:
@@ -111,19 +126,49 @@ def build_pipeline() -> Pipeline:
     )
 
 
+def numeric_feature_ranges(
+    features: pd.DataFrame,
+) -> dict[str, tuple[float, float]]:
+    """Return observed numeric ranges for inference guardrails."""
+    return {
+        column: (
+            float(features[column].min(skipna=True)),
+            float(features[column].max(skipna=True)),
+        )
+        for column in NUMERIC_FEATURES
+    }
+
+
+def validate_numeric_ranges(
+    application: pd.DataFrame,
+    ranges: dict[str, tuple[float, float]],
+) -> list[str]:
+    """Describe numeric values that fall outside the model's observed data."""
+    errors = []
+    for column, (minimum, maximum) in ranges.items():
+        if column not in application.columns:
+            errors.append(f"Missing required feature: {column}")
+            continue
+
+        values = pd.to_numeric(application[column], errors="coerce")
+        if values.isna().any():
+            errors.append(f"{column} must contain a numeric value")
+            continue
+
+        if ((values < minimum) | (values > maximum)).any():
+            errors.append(f"{column} must be between {minimum:g} and {maximum:g}")
+    return errors
+
+
 def evaluate_model(
     features: pd.DataFrame,
     target: pd.Series,
     test_size: float = 0.20,
     random_state: int = 42,
 ) -> dict:
-    """Evaluate the model on a stratified holdout and five-fold cross-validation."""
-    train_x, test_x, train_y, test_y = train_test_split(
-        features,
-        target,
-        test_size=test_size,
-        random_state=random_state,
-        stratify=target,
+    """Evaluate on one untouched holdout and CV within development data only."""
+    train_x, test_x, train_y, test_y = split_development_holdout(
+        features, target, test_size=test_size, random_state=random_state
     )
     model = build_pipeline()
     model.fit(train_x, train_y)
@@ -131,7 +176,7 @@ def evaluate_model(
     probability = model.predict_proba(test_x)[:, 1]
 
     holdout = {
-        "test_rows": int(len(test_y)),
+        "test_rows": len(test_y),
         "accuracy": float(accuracy_score(test_y, prediction)),
         "precision": float(precision_score(test_y, prediction, zero_division=0)),
         "recall": float(recall_score(test_y, prediction, zero_division=0)),
@@ -142,7 +187,9 @@ def evaluate_model(
 
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
     scoring = ["accuracy", "precision", "recall", "f1", "roc_auc"]
-    scores = cross_validate(build_pipeline(), features, target, cv=folds, scoring=scoring)
+    scores = cross_validate(
+        build_pipeline(), train_x, train_y, cv=folds, scoring=scoring, n_jobs=1
+    )
     cross_validation = {
         metric: {
             "mean": float(np.mean(scores[f"test_{metric}"])),
@@ -150,7 +197,18 @@ def evaluate_model(
         }
         for metric in scoring
     }
-    return {"holdout": holdout, "cross_validation": cross_validation}
+    protocol = {
+        "labelled_rows": len(target),
+        "development_rows": len(train_y),
+        "holdout_rows": len(test_y),
+        "cross_validation_folds": folds.n_splits,
+        "random_state": random_state,
+    }
+    return {
+        "evaluation_protocol": protocol,
+        "holdout": holdout,
+        "development_cross_validation": cross_validation,
+    }
 
 
 def train_production_model(features: pd.DataFrame, target: pd.Series) -> Pipeline:

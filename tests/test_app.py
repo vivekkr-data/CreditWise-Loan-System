@@ -15,6 +15,13 @@ class StreamlitAppTests(unittest.TestCase):
 
         self.assertEqual(len(app.exception), 0)
         self.assertIn("CreditWise", app.title[0].value)
+        self.assertNotIn("Age", [item.label for item in app.number_input])
+
+        app.button[0].click().run(timeout=30)
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(
+            any(metric.label == "Model approval score" for metric in app.metric)
+        )
 
 
 if __name__ == "__main__":

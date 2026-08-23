@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -9,12 +10,25 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, cross_validate
 
-from src.model import build_pipeline, load_data
+from src.model import build_pipeline, load_data, split_development_holdout
+
+
+def configured_n_jobs() -> int:
+    """Use one worker by default; allow explicit local parallelism."""
+    try:
+        value = int(os.getenv("CREDITWISE_N_JOBS", "1"))
+    except ValueError as error:
+        raise ValueError("CREDITWISE_N_JOBS must be an integer") from error
+    if value == 0 or value < -1:
+        raise ValueError("CREDITWISE_N_JOBS must be -1 or a positive integer")
+    return value
 
 
 def main() -> None:
     features, target = load_data()
+    development_x, _, development_y, _ = split_development_holdout(features, target)
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    n_jobs = configured_n_jobs()
     candidates = {
         "Logistic Regression": LogisticRegression(max_iter=2_000),
         "Random Forest": RandomForestClassifier(
@@ -22,7 +36,7 @@ def main() -> None:
             min_samples_leaf=2,
             class_weight="balanced_subsample",
             random_state=42,
-            n_jobs=-1,
+            n_jobs=n_jobs,
         ),
         "Gradient Boosting": GradientBoostingClassifier(
             n_estimators=150,
@@ -38,19 +52,16 @@ def main() -> None:
         pipeline = build_pipeline().set_params(classifier=classifier)
         scores = cross_validate(
             pipeline,
-            features,
-            target,
+            development_x,
+            development_y,
             cv=folds,
             scoring=scoring,
-            n_jobs=-1,
+            n_jobs=n_jobs,
         )
         rows.append(
             {
                 "model": name,
-                **{
-                    metric: scores[f"test_{metric}"].mean()
-                    for metric in scoring
-                },
+                **{metric: scores[f"test_{metric}"].mean() for metric in scoring},
             }
         )
 
