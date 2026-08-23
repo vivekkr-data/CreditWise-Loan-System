@@ -1,195 +1,303 @@
 # CreditWise — Loan Approval Prediction System
 
-A machine learning project that predicts whether a bank loan application should be **Approved** or **Rejected**, based on applicant financial and demographic data. Built as a final year project for **SecureTrust Bank's** proposed intelligent loan screening system.
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-Gradient_Boosting-F7931E?logo=scikitlearn&logoColor=white)](https://scikit-learn.org/)
+[![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Tests](https://github.com/vivekkr-data/CreditWise-Loan-System/actions/workflows/tests.yml/badge.svg)](https://github.com/vivekkr-data/CreditWise-Loan-System/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
----
+CreditWise is an end-to-end machine-learning portfolio project that estimates the likelihood of a loan application being approved. It includes data validation, exploratory analysis, a leakage-safe scikit-learn pipeline, reproducible evaluation, automated tests, and a Streamlit interface.
 
-## 1. Problem Statement
+> This is a decision-support demonstration built from the dataset included in this repository. It is not a production lending system and must not be used to make real financial decisions without legal, fairness, calibration, and business-policy review.
 
-SecureTrust Bank currently approves or rejects loans through manual document verification — checking income proofs, employment details, and credit history by hand. This process is slow and inconsistent, and produces two costly types of errors:
+## Results at a glance
 
-1. **Good customers get rejected** → lost business.
-2. **High-risk customers get approved** → financial losses.
+The selected Gradient Boosting model was evaluated on 950 labelled applications.
 
-The goal of this project is to build a model that learns patterns from historical loan applications and flags applications as likely **Approved** or **Rejected** before final human review — reducing both error types.
+| Evaluation | Accuracy | Precision | Recall | F1 | ROC-AUC |
+|---|---:|---:|---:|---:|---:|
+| Stratified holdout (190 rows) | **96.32%** | 90.77% | **98.33%** | **94.40%** | **98.72%** |
+| 5-fold stratified CV (mean) | **96.00%** | 89.94% | **98.33%** | **93.92%** | **98.74%** |
+| 5-fold CV standard deviation | 1.03% | 2.52% | 1.49% | 1.51% | 0.44% |
 
----
+Positive class: `Loan_Approved = Yes`.
 
-## 2. Dataset
+Holdout confusion matrix:
 
-- **Raw size:** 1,000 loan applications, 20 columns (19 features + 1 target)
-- **Missing data:** every column has ~50 missing values (5%)
-- **Working size:** 950 applications after dropping the 50 rows with a missing target (see Section 3.1 — labels are never imputed)
-- **Target distribution:** ~69% Rejected, ~31% Approved (moderately imbalanced)
+|  | Predicted Rejected | Predicted Approved |
+|---|---:|---:|
+| Actually Rejected | 124 | 6 |
+| Actually Approved | 1 | 59 |
 
-| Column | Description |
+The holdout accuracy means the model classified **183 of 190** unseen test applications correctly for the fixed, reproducible split (`random_state=42`). Cross-validation is also reported because one train/test split alone can be misleading.
+
+## Problem statement
+
+The supplied case study describes SecureTrust Bank's manual loan-screening process. Manual review can be slow and inconsistent, creating two costly outcomes:
+
+1. A suitable applicant is rejected, causing lost business.
+2. A high-risk applicant is approved, increasing financial risk.
+
+CreditWise demonstrates how historical application data can support a reviewer with a consistent probability estimate before the final human decision.
+
+## System workflow
+
+```mermaid
+flowchart TD
+    A["Raw CSV<br/>1,000 applications"] --> B["Schema and target validation"]
+    B --> C["950 labelled applications"]
+    C --> D["Stratified train/test split"]
+    D --> E["Train-only preprocessing<br/>impute, encode, scale"]
+    E --> F["Gradient Boosting model"]
+    F --> G["Holdout + 5-fold CV metrics"]
+    F --> H["Streamlit decision-support UI"]
+```
+
+All preprocessing is contained inside one scikit-learn `Pipeline`. During evaluation, imputers and encoders are fitted only on the training fold. This prevents test-set statistics from leaking into model training.
+
+## Dataset
+
+The bundled CSV contains 1,000 rows and 20 columns. Fifty rows have no target label, so evaluation uses the remaining 950 rows. Feature-level missing values are handled inside the pipeline.
+
+| Category | Columns |
 |---|---|
-| Applicant_ID | Unique applicant ID |
-| Applicant_Income | Monthly income of applicant |
-| Coapplicant_Income | Monthly income of co-applicant |
-| Employment_Status | Salaried / Self-Employed / Business |
-| Age | Applicant age |
-| Marital_Status | Married / Single |
-| Dependents | Number of dependents |
-| Credit_Score | Credit bureau score |
-| Existing_Loans | Number of already running loans |
-| DTI_Ratio | Debt-to-Income ratio |
-| Savings | Savings balance |
-| Collateral_Value | Value of collateral provided |
-| Loan_Amount | Loan amount requested |
-| Loan_Term | Loan duration (months) |
-| Loan_Purpose | Home / Education / Personal / Business |
-| Property_Area | Urban / Semi-Urban / Rural |
-| Education_Level | Graduate / Postgraduate / Undergraduate |
-| Gender | Male / Female |
-| Employer_Category | Govt / Private / Self |
-| **Loan_Approved** | **Target: 1 = Approved, 0 = Rejected** |
+| Income and assets | `Applicant_Income`, `Coapplicant_Income`, `Savings`, `Collateral_Value` |
+| Credit and debt | `Credit_Score`, `Existing_Loans`, `DTI_Ratio` |
+| Loan details | `Loan_Amount`, `Loan_Term`, `Loan_Purpose` |
+| Applicant context | `Age`, `Dependents`, `Employment_Status`, `Education_Level`, `Property_Area`, `Employer_Category` |
+| Analysis only | `Applicant_ID`, `Gender`, `Marital_Status` |
+| Target | `Loan_Approved` (`Yes` or `No`) |
 
----
+The real values present in the CSV are used by the application. For example, employment includes `Salaried`, `Self-employed`, `Contract`, and `Unemployed`.
 
-## 3. Workflow
+### Features deliberately excluded from prediction
 
-### 3.1 Data Cleaning
-- Rows with a **missing target** (`Loan_Approved`) are dropped outright — 50 rows (5%), leaving 950. A label is either known or the row isn't used for training; it is never guessed by an imputer.
-- Missing numerical values in the remaining rows filled with the **mean** (`SimpleImputer(strategy="mean")`).
-- Missing categorical values filled with the **mode** (`SimpleImputer(strategy="most_frequent")`), explicitly excluding the target column.
-- `Applicant_ID` dropped (identifier, not predictive).
+- `Applicant_ID`: an identifier, not a meaningful predictor.
+- `Gender`: retained only for future fairness analysis.
+- `Marital_Status`: excluded from the production feature set to avoid directly using personal relationship status.
 
-### 3.2 Exploratory Data Analysis
-- Class balance check (pie chart)
-- Distribution plots for income, co-applicant income, credit score
-- Boxplots of income, credit score, DTI ratio, and savings split by approval outcome
-- Correlation heatmap across all engineered features
+Excluding gender and marital status did not reduce the verified holdout or cross-validation accuracy for this dataset.
 
-**Key EDA findings:**
-- **Credit_Score** is the strongest single predictor of approval (correlation ≈ **0.45**)
-- **DTI_Ratio** is the strongest negative predictor (correlation ≈ **-0.44**) — higher debt-to-income strongly associates with rejection
-- **Applicant_Income** alone is a weak predictor (correlation ≈ 0.12) — income matters far less than how much of it is already committed to debt
-- Most other features (employment type, property area, gender, education) show little to no correlation with approval
+## Model design
 
-### 3.3 Feature Engineering
-- Label encoding for `Education_Level` and the target
-- One-hot encoding (drop-first) for `Employment_Status`, `Marital_Status`, `Loan_Purpose`, `Property_Area`, `Gender`, `Employer_Category`
-- Squared terms added: `DTI_Ratio_sq`, `Credit_Score_sq` (second pass, replacing the raw linear terms)
-- `StandardScaler` applied to all features before model training
+### Preprocessing
 
-### 3.4 Models Trained
-Three classifiers were trained and compared, once on the base feature set and once after feature engineering:
+- Missing numeric values: median imputation.
+- Missing categorical values: most-frequent imputation.
+- Numeric features: standard scaling.
+- Categorical features: one-hot encoding with unknown-category handling.
+- Missing targets: rows are removed; labels are never imputed.
+- Split: stratified 80/20 holdout so class proportions remain consistent.
 
-- Logistic Regression
-- K-Nearest Neighbors (k=5)
-- Gaussian Naive Bayes
+### Selected model
 
----
+The application uses `GradientBoostingClassifier` with:
 
-## 4. Results
-
-*(Metrics below are computed on the cleaned 950-row dataset, after dropping rows with a missing target — see Section 3.1.)*
-
-### Baseline features (before squared terms)
-
-| Model | Precision | Recall | F1 Score | Accuracy |
-|---|---|---|---|---|
-| Logistic Regression | 0.873 | 0.787 | 0.828 | 0.895 |
-| KNN (k=5) | 0.733 | 0.541 | 0.623 | 0.789 |
-| Naive Bayes | 0.898 | 0.721 | 0.800 | 0.884 |
-
-### After feature engineering (DTI_Ratio_sq, Credit_Score_sq)
-
-| Model | Precision | Recall | F1 Score | Accuracy |
-|---|---|---|---|---|
-| Logistic Regression | 0.860 | **0.803** | **0.831** | 0.895 |
-| KNN (k=5) | 0.744 | 0.525 | 0.615 | 0.789 |
-| Naive Bayes | **0.902** | 0.754 | 0.821 | 0.895 |
-
-**Takeaway:** Naive Bayes has the highest precision in both rounds. Logistic Regression has the highest recall and F1, and ties Naive Bayes on accuracy after feature engineering. Which model is "best" genuinely depends on what the bank wants to optimize for:
-- Optimizing for **precision** (don't approve risky applicants) → Naive Bayes
-- Optimizing for **recall** and overall balance (don't reject good applicants, catch more approvals correctly) → Logistic Regression
-
-This project reports both rather than declaring a single winner, since the trade-off is a business decision, not a purely technical one.
-
----
-
-## 5. Tech Stack
-
-- Python 3
-- pandas, numpy — data handling
-- seaborn, matplotlib — visualization
-- scikit-learn — preprocessing, modeling, evaluation
-- Jupyter Notebook — development environment
-
----
-
-## 6. Project Structure
-
-```
-CreditWise-Loan-Approval-Prediction/
-│
-├── 📂 data/
-│   └── loan_approval_data.csv
-│
-├── 📂 notebook/
-│   └── credit_wise.ipynb
-│
-├── 📂 images/
-│   ├── applicant_income_distribution.png
-│   ├── applicant_income_by_loan_status.png
-│   ├── applicant_income_vs_loan_approval.png
-│   ├── coapplicant_income_distribution.png
-│   ├── credit_score_vs_loan_approval.png
-│   ├── education_level_distribution.png
-│   ├── feature_analysis_boxplots.png
-│   ├── feature_correlation_heatmap.png
-│   └── loan_approval_distribution.png
-│
-├── 📂 problem_statement/
-│   ├── Problem Statement (Part-1).png
-│   └── Dataset Description.png
-│
-├── 📄 requirements.txt
-├── 📄 LICENSE
-├── 📄 .gitignore
-└── 📄 README.md
+```python
+GradientBoostingClassifier(
+    n_estimators=150,
+    learning_rate=0.05,
+    max_depth=2,
+    random_state=42,
+)
 ```
 
----
+Gradient Boosting was selected because it captured non-linear interactions in this tabular dataset and produced the strongest verified balance of accuracy, recall, F1, and ROC-AUC among the tested approaches.
 
-## 7. How to Run
+### Candidate comparison
+
+All candidates used the same features, preprocessing pipeline, and five stratified folds.
+
+| Model | CV Accuracy | CV Precision | CV Recall | CV F1 | CV ROC-AUC |
+|---|---:|---:|---:|---:|---:|
+| **Gradient Boosting** | **96.00%** | 89.94% | **98.33%** | **93.92%** | **98.74%** |
+| Random Forest | 95.68% | **90.66%** | 96.31% | 93.35% | 98.27% |
+| Logistic Regression | 85.16% | 78.69% | 72.11% | 75.17% | 92.44% |
+
+Reproduce this table with:
 
 ```bash
-# 1. Clone the repository
-git clone <your-repo-url>
-cd CreditWise-Loan-Approval-Prediction
-
-# 2. Create a virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
-
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Launch the notebook
-jupyter notebook notebook/credit_wise.ipynb
+python benchmark_models.py
 ```
 
----
+## Repository improvements
 
-## 8. Limitations & Next Steps
+This version fixes the main issues in the original notebook-only project:
 
-Being upfront about what this project doesn't yet do:
+- Corrected the broken CSV path.
+- Moved imputation, scaling, and encoding inside a pipeline to remove data leakage.
+- Added a stratified split and 5-fold cross-validation.
+- Replaced manual dataframe mutation with one reusable training/inference pipeline.
+- Added schema and target-label validation.
+- Added a stronger Gradient Boosting model.
+- Excluded identifier and selected sensitive personal fields from prediction.
+- Rebuilt the notebook so it runs from the repository root.
+- Added a deployable Streamlit application.
+- Added unit tests, an app smoke test, and GitHub Actions CI.
+- Added reproducible metric output in `reports/metrics.json`.
+- Added a Render deployment blueprint.
 
-- **No cross-validation.** Results come from a single 80/20 split (~200 test rows). K-fold cross-validation would give a more reliable estimate of how these models generalize.
-- **No hyperparameter tuning.** All three models use scikit-learn defaults. A GridSearch/RandomizedSearch pass, especially on KNN's `k` and Logistic Regression's regularization strength, is a natural next step.
-- **No tree-based or ensemble models yet.** Random Forest and Gradient Boosting (e.g. XGBoost) typically handle this kind of tabular, mixed-type data better than linear/instance-based models and are worth benchmarking next.
-- **Class imbalance (69/31) is measured, not corrected.** Precision/recall/F1 are reported (good — better than accuracy alone), but no resampling (SMOTE) or `class_weight='balanced'` has been applied yet.
-- **No deployment layer.** This is currently an analysis notebook, not a runnable service — no saved model file, no API, no UI. A `joblib`-exported model behind a simple Flask/FastAPI endpoint would be the logical next step toward an actual "system."
+## Project structure
 
----
+```text
+CreditWise-Loan-System/
+├── .github/workflows/tests.yml      # Continuous integration
+├── .streamlit/config.toml           # Streamlit theme and server settings
+├── src/
+│   ├── __init__.py
+│   └── model.py                     # Validation, pipeline, training, evaluation
+├── tests/
+│   ├── test_app.py                  # Streamlit startup smoke test
+│   └── test_model.py                # Dataset and inference tests
+├── reports/
+│   └── metrics.json                 # Reproducible verified metrics
+├── app.py                           # Streamlit user interface
+├── benchmark_models.py              # Reproducible candidate comparison
+├── train_model.py                   # Training and artifact-generation command
+├── credit_wise.ipynb                # Clean EDA and model evaluation notebook
+├── loan_approval_data.csv           # Bundled dataset
+├── render.yaml                      # Optional Render deployment config
+├── requirements.txt                 # Runtime dependencies
+├── requirements-dev.txt             # Development/test dependencies
+├── *.png                            # Problem statement and EDA outputs
+├── LICENSE
+└── README.md
+```
 
-## 9. Author
+## Run locally
 
-**Vivek Kumar**
-Final Year Project — Machine Learning
+### 1. Clone the repository
 
-- LinkedIn: [linkedin.com/in/vivek-kumar-66041b410](https://www.linkedin.com/in/vivek-kumar-66041b410)
-- GitHub: [github.com/vivekkr-data](https://github.com/vivekkr-data)
+```bash
+git clone https://github.com/vivekkr-data/CreditWise-Loan-System.git
+cd CreditWise-Loan-System
+```
+
+### 2. Create and activate a virtual environment
+
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Linux or macOS:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Install dependencies
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 4. Start the application
+
+```bash
+streamlit run app.py
+```
+
+Open the local URL printed in the terminal, usually `http://localhost:8501`.
+
+## Reproduce training and metrics
+
+```bash
+python train_model.py
+```
+
+This command:
+
+1. Loads and validates the CSV.
+2. Evaluates a stratified holdout and 5-fold cross-validation.
+3. Fits the final model on all 950 labelled rows.
+4. Writes `reports/metrics.json`.
+5. Creates the local artifact `artifacts/creditwise_pipeline.joblib`.
+
+Generated binary artifacts are intentionally ignored by Git. The Streamlit app trains the same small pipeline once and caches it when no artifact is present.
+
+To inspect the full analysis:
+
+```bash
+jupyter notebook credit_wise.ipynb
+```
+
+## Run tests
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+GitHub Actions repeats the tests and verifies the training workflow on every push to `main` and on pull requests.
+
+## Deployment
+
+### Recommended: Streamlit Community Cloud
+
+This is the best fit for the current project because the interface is already written in Streamlit, the repository is public, and no database or secret is required.
+
+1. Sign in at [Streamlit Community Cloud](https://share.streamlit.io/) with GitHub.
+2. Select **Create app**.
+3. Choose repository `vivekkr-data/CreditWise-Loan-System`.
+4. Select branch `main`.
+5. Set the entrypoint to `app.py`.
+6. In advanced settings, choose Python 3.11.
+7. Deploy.
+
+The root `requirements.txt` and `.streamlit/config.toml` are already prepared for this route. See the [official Streamlit deployment guide](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app).
+
+### Alternative: Render
+
+`render.yaml` is included. In Render, create a new Blueprint and connect this GitHub repository. It uses:
+
+```text
+Build command: pip install -r requirements.txt
+Start command: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
+```
+
+Render's free web services are suitable for demos but can spin down when idle, so Streamlit Community Cloud is the simpler portfolio option.
+
+## How to explain this project to a recruiter
+
+### 30-second version
+
+> CreditWise is an end-to-end loan approval prediction project built with Python, scikit-learn, and Streamlit. I corrected data leakage by moving imputation, encoding, and scaling into a single pipeline, compared model behaviour, and selected Gradient Boosting. On a stratified 190-row holdout it achieved 96.32% accuracy, 94.40% F1, and 98.72% ROC-AUC. I also added cross-validation, tests, CI, an interactive UI, and responsible-use safeguards.
+
+### Technical discussion points
+
+1. **Why not report only accuracy?** The target is imbalanced: 652 rejected and 298 approved. Precision, recall, F1, ROC-AUC, and the confusion matrix show what accuracy hides.
+2. **How was leakage prevented?** Every imputer, scaler, and encoder is fitted inside the pipeline on each training split only.
+3. **Why stratification?** It preserves the approved/rejected ratio in each evaluation split.
+4. **Why Gradient Boosting?** It models non-linear interactions between credit score, debt-to-income ratio, requested amount, and other tabular features.
+5. **Why report cross-validation?** Five folds reduce dependence on one lucky or unlucky test split.
+6. **Why exclude gender and marital status?** They are unnecessary for this dataset's performance and inappropriate as direct decision drivers in a responsible lending prototype.
+7. **What would come next?** External validation, probability calibration, subgroup fairness testing, threshold selection based on business costs, monitoring, and model/version governance.
+
+## Limitations
+
+- The dataset is small: only 950 labelled records.
+- The repository does not document how the data was collected, so the metrics must not be treated as real-bank performance.
+- Validation is internal; no separate external or time-based dataset is available.
+- Feature importance is not causal explanation.
+- The 50% threshold is only for demonstration and has not been optimized against lending costs.
+- Fairness cannot be established merely by removing sensitive columns; proxy features and subgroup outcomes still require formal auditing.
+- The app does not perform authentication, store applications, or integrate with a bank system.
+
+## Responsible use
+
+CreditWise should support a trained human reviewer, not automatically approve or reject an applicant. A real deployment would require consent, access controls, audit logs, adverse-action explanations, security review, fairness analysis, local regulatory compliance, drift monitoring, and a manual appeal process.
+
+## Author
+
+**Vivek Kumar** — Computer Science student
+
+- [GitHub](https://github.com/vivekkr-data)
+- [LinkedIn](https://www.linkedin.com/in/vivek-kumar-66041b410)
+
+## License
+
+This project is available under the [MIT License](LICENSE).
