@@ -1,6 +1,6 @@
 # CreditWise — Responsible Loan Approval Prediction
 
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![scikit-learn](https://img.shields.io/badge/Model-Gradient_Boosting-F7931E?logo=scikitlearn&logoColor=white)](https://scikit-learn.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![Tests](https://github.com/vivekkr-data/CreditWise-Loan-System/actions/workflows/tests.yml/badge.svg)](https://github.com/vivekkr-data/CreditWise-Loan-System/actions/workflows/tests.yml)
@@ -242,7 +242,7 @@ Streamlit Community Cloud is the best fit because the interface is already built
 2. Create an app from `vivekkr-data/CreditWise-Loan-System`.
 3. Select branch `main`.
 4. Set the entrypoint to `app.py`.
-5. Choose Python 3.11 or newer.
+5. Choose Python 3.12 or newer. The pinned NumPy version requires Python 3.12+.
 6. Deploy.
 
 The current public deployment is [CreditWise Loan System](https://creditwise-loan-system-vivek.streamlit.app/). A push to the connected `main` branch triggers its update.
